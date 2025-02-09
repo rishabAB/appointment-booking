@@ -1,0 +1,27 @@
+{
+  "name": "appointment-booking-ivr",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/dialogflow-fulfillment": "^0.6.1",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@types/mongoose": "^5.11.97",
+    "cors": "^2.8.5",
+    "dialogflow-fulfillment": "^0.6.1",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.7"
+  }
+}
