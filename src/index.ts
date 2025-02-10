@@ -26,7 +26,7 @@ app.post("/insurance", async (req: Request, res: Response) => {
     dob,
     appointment_type,
     insurance_company,
-    insurance_play_type,
+    insurance_plan_type,
   } = parameters;
 
   const newPatient = {
@@ -35,32 +35,20 @@ app.post("/insurance", async (req: Request, res: Response) => {
     dateOfBirth: dob,
     appointmentType: appointment_type,
     insuranceCompany: insurance_company,
-    insurancePlanType: insurance_play_type,
+    insurancePlanType: insurance_plan_type,
   };
 
   const response = await connection.db
     ?.collection("patients")
     .insertOne(newPatient);
-  // pageId ="2ae928ad-26af-4132-841c-071b4da1b498";
+  
   if (response?.acknowledged) {
     console.log("yes patient saved");
+    res.status(201);
   } else {
     console.log("Something went wrong");
+    res.status(500);
   }
-
-  // const responsePayload = {
-  //   fulfillment_response: {
-  //     messages: [{ text: { text: [webhookResponse] } }],
-  //   },
-  //   // sessionInfo: {
-  //   //   // parameters: {
-  //   //   //   receivedFirstName: parameters.firstName || "Unknown",
-  //   //   //   receivedLastName: parameters.lastName || "Unknown",
-  //   //   // },
-  //   //   currentPage: `projects/voice-agent-using-dialogflow/locations/global/agents/1083e531-abdf-43c7-a801-6ff8e9c65355/flows/00000000-0000-0000-0000-000000000000/pages/${pageId}`
-  //   // }
-  // };
-  res.status(201);
 
   }
 
@@ -74,11 +62,125 @@ app.post("/insurance", async (req: Request, res: Response) => {
 
 app.post("/appointmentRequest",async (req: Request, res: Response) =>
 {
-  const parameters = req.body?.sessionInfo?.parameters || {};
-  console.log("Insuracne details", parameters);
+   let pageId :string = "9e37c34b-9307-40d1-9f45-8f97b3ff70f5";
+  try{
+    // Need to add validations as well for the parameters I am receiving and for the appointment type as well.
+    const parameters = req.body?.sessionInfo?.parameters || {};
+    console.log("apppointment details", parameters);
+    let webhookResponse: string
+   
+    const {day,hours,minutes,month,year} = parameters?.appointment_time;
+    const appointment_type = parameters?.appointment_type;
+   
+    // ----------------------------------------------
+    
+    // Convert to JavaScript Date (month - 1 because JavaScript months are 0-based)
+    const appointmentDate = new Date(
+      year,
+      month -1 , 
+      day,
+      hours,
+      minutes,
+    );
+    let appointmentISO = appointmentDate.toISOString();
+    
+  
+    // -------------------------------------------------
+    const existingAppointment = await connection.db
+    ?.collection("appointment")
+    .findOne({ date_time:appointmentISO,type:appointment_type });
+  
+     if (existingAppointment) {
+      console.log("This time slot is already booked!");
+      webhookResponse = "This slot has already been booked.";
+      const responsePayload = {
+        fulfillment_response: {
+          messages: [{ text: { text: [webhookResponse] } }],
+          
+        },
+        sessionInfo: {
+          parameters: {
+            isAppointmentBooked:false
+          }
+        }
+      };;
+      res.json(responsePayload);
+      
+    } else {
+      console.log("Time slot is available!");
+  
+      let newAppointment = {
+        date_time:appointmentISO,
+        type:appointment_type
+      }
+  
+      const response = await connection.db
+      ?.collection("appointment")
+      .insertOne(newAppointment);
+    
+    if (response?.acknowledged) {
+      console.log("Appointment booked");
+      webhookResponse = "Your appointment has been booked"; // Need to mention the date and appointment type
+      const responsePayload = {
+    
+        fulfillment_response: {
+          messages: [{ text: { text: [webhookResponse] } }],
+        },
+        sessionInfo:{
+          parameters:{
+            appointmentDateTime:appointmentISO,
+            type:appointment_type,
+            isAppointmentBooked:true
+          }
+        }
+      }; 
+      res.json(responsePayload);  
+      
+    } else {
+      console.log("Something went wrong");
+      webhookResponse = "Please try again,something went wrong !!";  
+      const responsePayload = {
+      
+        fulfillment_response: {
+          messages: [{ text: { text: [webhookResponse] } }],
+        },
+        sessionInfo: {
+          parameters: {
+            isAppointmentBooked:false
+          }
+        }
+      }; 
+      res.json(responsePayload);   
+    }
+  
+   
+    }
+  
+  }
+  catch(error)
+  {
+    console.error(error);
+    const responsePayload = {
+      // targetPage: `projects/voice-agent-using-dialogflow/locations/global/agents/1083e531-abdf-43c7-a801-6ff8e9c65355/flows/00000000-0000-0000-0000-000000000000/pages/${pageId}`,
+      fulfillment_response: {
+        messages: [{ text: { text: ["Please try again,something went wrong !!"] } }],
+      },
+      sessionInfo: {
+        parameters: {
+          isAppointmentBooked:false
+        }
+      }
+    };
+    res.json(responsePayload);
+    
+  }
+
+
+  // --------------------------------------------
+ 
   // here I need to in the appointments collections 
   //whether it is available or not then accordingly send the response
-  res.status(200);
+
 
 })
 
@@ -87,11 +189,8 @@ app.post("/webhook", async (req: Request, res: Response) => {
     // Extract session parameters
     const parameters = req.body?.sessionInfo?.parameters || {};
     let webhookResponse: string;
-    let pageId: string;
 
-    const { name, email, dob, appointment_type } = parameters;
-
-    console.log("Check if email exists in ", parameters);
+    const {  email } = parameters;
 
     // ----------------------------------------
     const emailExixts = await connection.db
@@ -101,28 +200,9 @@ app.post("/webhook", async (req: Request, res: Response) => {
       webhookResponse =
         "Please provide your insurance provider name and plan type.";
 
-      // const newPatient = {
-      //     name: name,
-      //     email: email,
-      //     dateOfBirth:dob,
-      //     appointmentType: appointment_type
-      //   };
-
-      // const response = await connection.db?.collection('patients').insertOne(newPatient);
-      // // pageId ="2ae928ad-26af-4132-841c-071b4da1b498";
-      // if(response?.acknowledged)
-      // {
-      //   console.log("yes patient saved");
-      // }
-      // else{
-      //   console.log("Something went wrong");
-      // }
-      console.log(response);
-      // Ask for more details like contact number and insurance
     } else {
       webhookResponse =
-        "Please tell me when you want to book an appointment and your appointment type.";
-      pageId = "";
+        "Please tell when you want to book an appointment and your appointment type.";
     }
     // ---------------------------------
 
@@ -148,7 +228,7 @@ app.post("/webhook", async (req: Request, res: Response) => {
 
 app.post("/", async (req: Request, res: Response) => {
   // assuming we are getting these details directly through postman and all these fields should be mandatory
-  const { firstName, lastName, email, dateOfBirth, appointmentType } = req.body;
+  const { firstName, lastName, email, dateOfBirth } = req.body;
   // Email should be mandatory
   if (!email) {
     res.status(400);
@@ -163,7 +243,6 @@ app.post("/", async (req: Request, res: Response) => {
         lastName: lastName,
         email: email,
         dateOfBirth: dateOfBirth,
-        appointmentType: appointmentType,
       };
 
       const response = await connection.db
