@@ -60,14 +60,31 @@ app.post("/insurance", async (req: Request, res: Response) => {
   
 });
 
+function formatDate(isoString: string): string {
+  const date: Date = new Date(isoString);
+
+  const options: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  };
+
+  return date.toLocaleString("en-US", options);
+}
+
 app.post("/appointmentRequest",async (req: Request, res: Response) =>
 {
    let pageId :string = "9e37c34b-9307-40d1-9f45-8f97b3ff70f5";
+   let isAppointmentBooked:boolean = false;
   try{
     // Need to add validations as well for the parameters I am receiving and for the appointment type as well.
     const parameters = req.body?.sessionInfo?.parameters || {};
     console.log("apppointment details", parameters);
-    let webhookResponse: string
+    let webhookResponse: string;
+    
    
     const {day,hours,minutes,month,year} = parameters?.appointment_time;
     const appointment_type = parameters?.appointment_type;
@@ -89,6 +106,7 @@ app.post("/appointmentRequest",async (req: Request, res: Response) =>
     const existingAppointment = await connection.db
     ?.collection("appointment")
     .findOne({ date_time:appointmentISO,type:appointment_type });
+
   
      if (existingAppointment) {
       console.log("This time slot is already booked!");
@@ -96,14 +114,13 @@ app.post("/appointmentRequest",async (req: Request, res: Response) =>
       const responsePayload = {
         fulfillment_response: {
           messages: [{ text: { text: [webhookResponse] } }],
-          
         },
         sessionInfo: {
           parameters: {
             isAppointmentBooked:false
           }
         }
-      };;
+      };
       res.json(responsePayload);
       
     } else {
@@ -120,6 +137,7 @@ app.post("/appointmentRequest",async (req: Request, res: Response) =>
     
     if (response?.acknowledged) {
       console.log("Appointment booked");
+      isAppointmentBooked = true;
       webhookResponse = "Your appointment has been booked"; // Need to mention the date and appointment type
       const responsePayload = {
     
@@ -128,17 +146,17 @@ app.post("/appointmentRequest",async (req: Request, res: Response) =>
         },
         sessionInfo:{
           parameters:{
-            appointmentDateTime:appointmentISO,
+            appointmentDateTime:formatDate(appointmentISO),
             type:appointment_type,
-            isAppointmentBooked:true
+            isAppointmentBooked:isAppointmentBooked
           }
         }
       }; 
       res.json(responsePayload);  
       
     } else {
-      console.log("Something went wrong");
-      webhookResponse = "Please try again,something went wrong !!";  
+      console.error("Something went wrong",response);
+      webhookResponse = "Something went wrong!! Please try again";  
       const responsePayload = {
       
         fulfillment_response: {
@@ -146,7 +164,7 @@ app.post("/appointmentRequest",async (req: Request, res: Response) =>
         },
         sessionInfo: {
           parameters: {
-            isAppointmentBooked:false
+            isAppointmentBooked:isAppointmentBooked
           }
         }
       }; 
@@ -161,13 +179,12 @@ app.post("/appointmentRequest",async (req: Request, res: Response) =>
   {
     console.error(error);
     const responsePayload = {
-      // targetPage: `projects/voice-agent-using-dialogflow/locations/global/agents/1083e531-abdf-43c7-a801-6ff8e9c65355/flows/00000000-0000-0000-0000-000000000000/pages/${pageId}`,
       fulfillment_response: {
-        messages: [{ text: { text: ["Please try again,something went wrong !!"] } }],
+        messages: [{ text: { text: ["An Error occurred,Please try again !!"] } }],
       },
       sessionInfo: {
         parameters: {
-          isAppointmentBooked:false
+          isAppointmentBooked:isAppointmentBooked
         }
       }
     };
