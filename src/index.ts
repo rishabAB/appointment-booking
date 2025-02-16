@@ -6,6 +6,7 @@ import { InsertOneResult } from "mongodb";
 import { ErrorRequestHandler } from "express";
 import { WebhookClient } from "dialogflow-fulfillment";
 import { ObjectId, Collection } from "mongodb";
+import { rejects } from "assert";
 const app = express();
 const uri: string =
   process.env.ATLAS_URI ||
@@ -28,6 +29,7 @@ function validateDOB(dob: any): boolean {
     day,
   
   );
+  console.log("Dob date",dobDate);
 
   // -----
   // const dobDate = new Date(dob);
@@ -35,8 +37,10 @@ function validateDOB(dob: any): boolean {
   
   // Remove time portion for an accurate date comparison
   today.setHours(0, 0, 0, 0);
+  const newYorkTime = new Date(today.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  newYorkTime.setHours(0,0,0,0);
 
-  return dobDate <= today; // DOB should not be greater than today
+  return dobDate <= newYorkTime; // DOB should not be greater than today
 }
 app.post("/validateDob", async (req: Request, res: Response) =>
 {
@@ -277,20 +281,25 @@ function formatDate(isoString: string): string {
   return date.toLocaleString("en-US", options);
 }
 
-function isTimeSlotValid(minutes: number, hours: number, day: number, month: number, year: number): object {
+function isTimeSlotValid(minutes: number, hours: number, day: number, month: number, year: number): any {
   // Create the date object (local time)
-  const appointmentDate = new Date(year, month - 1, day, hours, minutes);
+  if(minutes == undefined || hours == undefined || day == undefined || month == undefined || year == undefined)
+  {
+    return {isValid:false,message:"Incorrect time slot provided"};
+  }
+  // Also need to check whether date is of past or not if past then incorrecrt time slot 
+  
+  const appointmentDate = new Date(year, month -1 , day, hours, minutes);
 
   // Convert to New York timezone
   const newYorkTime = new Date(appointmentDate.toLocaleString("en-US", { timeZone: "America/New_York" }));
 
   // Extract the day of the week (0 = Sunday, 6 = Saturday)
-  const dayOfWeek = newYorkTime.getDay(); 
+  const dayOfWeek = appointmentDate.getDay(); 
 
   // Extract hours and minutes in New York time
-  const nyHours = newYorkTime.getHours();
-  const nyMinutes = newYorkTime.getMinutes();
-
+  const nyHours = appointmentDate.getHours();
+  
   // Check if it's Sunday
   if (dayOfWeek === 0) {
     return {isValid:false,message:"We don't work on sundays"};
@@ -309,6 +318,119 @@ function isTimeSlotValid(minutes: number, hours: number, day: number, month: num
   return {isValid:true,message:null};
 }
 
+ function getPatientId(patient_id_or_email : string) : Promise<string | undefined>
+{
+  return new Promise(async(resolve,reject) =>
+  {
+    const elem =patientIdRegex.test(patient_id_or_email);
+    if(elem)
+    {
+      resolve(patient_id_or_email);
+    }
+    else{
+      const response = await connection.db
+      ?.collection("patients")
+      .findOne({ email:patient_id_or_email });
+      resolve(response?._id?.toString());
+    }
+
+  })
+
+}
+
+function getNearestAppointmentSlot(existingAppointment: any,appointment_type :String)  : Promise<any>
+{
+  return new Promise(async(resolve,reject) =>
+  {
+    // const existingAppointment = await connection.db
+    //   ?.collection("appointment")
+    //   .findOne({
+    //     type: appointment_type, // Ensure the appointment type matches
+    //     startTime: { $lte: desiredAppointmentSlot }, // startTime should be before or equal to the desired time
+    //     endTime: { $gt: desiredAppointmentSlot },   // endTime should be after the desired time
+    //   });
+    let returnObject={isFound:false as Boolean,beforeDesiredDate:null as Date | null,afterDesiredDate : null as Date | null,message:""}
+    const beforeDesiredSlot = await recursiveAppointmentSlot(existingAppointment.startTime,appointment_type,"BEFORE");
+    const afterDesiredSlot = await recursiveAppointmentSlot(existingAppointment.endTime,appointment_type,"AFTER");
+    if(!beforeDesiredSlot && !afterDesiredSlot)
+    {
+      returnObject.message = "No date available for the desired date";
+    }
+    else if(beforeDesiredSlot && afterDesiredSlot){
+      returnObject.isFound = true;
+      returnObject.beforeDesiredDate = beforeDesiredSlot;
+      returnObject.afterDesiredDate = afterDesiredSlot;
+    }
+    else if(beforeDesiredSlot && !afterDesiredSlot)
+    {
+      returnObject.isFound = true;
+      returnObject.beforeDesiredDate = beforeDesiredSlot;
+      returnObject.message="Only Before Desired Slot";
+    
+    }
+    else{
+      returnObject.isFound = true;
+      returnObject.afterDesiredDate = afterDesiredSlot;
+      returnObject.message="Only After Desired Slot";
+
+    }
+    resolve(returnObject);
+
+  })
+ 
+}
+
+async function recursiveAppointmentSlot(alreadyBooked: Date,appointment_type :String, beforeOrAfterDesired :String) 
+{
+  // return new Promise((async (resolve,reject) =>
+  // {
+
+    // Base case
+     let hours = alreadyBooked.getHours();
+    console.log("Current hours",hours);
+    if(hours < 9  || hours >= 19 || hours === 13)
+    {
+      // resolve(null);
+      return null;
+    }
+    else{
+      // --  const appointmentDate = new Date(year, month -1 , day, hours, minutes);
+      // let desiredAppointmentSlot:Date = new Date(year, month  , day, hours, minutes);
+      let cloneDate : Date = new Date(alreadyBooked);
+     
+      beforeOrAfterDesired === "BEFORE" ?  cloneDate.setMinutes(alreadyBooked.getMinutes() - 45) :  cloneDate.setMinutes(alreadyBooked.getMinutes() + 45);
+   
+      const existingAppointment = await connection.db
+      ?.collection("appointment")
+      .findOne({
+        type: appointment_type, // Ensure the appointment type matches
+        startTime: { $lte: cloneDate }, // startTime should be before or equal to the desired time
+        endTime: { $gt: alreadyBooked },   // endTime should be after the desired time
+      });
+      if(existingAppointment)
+      {
+        if(beforeOrAfterDesired === "BEFORE")
+        {
+          // resolve(recursiveAppointmentSlot(existingAppointment.startTime,appointment_type,beforeOrAfterDesired));
+          return  (recursiveAppointmentSlot(existingAppointment.startTime,appointment_type,beforeOrAfterDesired));
+        }
+        else{
+          // resolve(recursiveAppointmentSlot(existingAppointment.endTime,appointment_type,beforeOrAfterDesired));
+          return(recursiveAppointmentSlot(existingAppointment.endTime,appointment_type,beforeOrAfterDesired));
+        }
+       
+      }
+      else{
+        // resolve(cloneDate);
+        return cloneDate;
+      }
+
+    }
+  
+
+  // }))
+}
+
 // Presumed conditions
 /* Appointment cannot get scheduled on sundays, timings are 9 am to 7pm , 1pm to 2pm break time , by default I am assuming 
 appointment slot is 30 minutes to 45 minutes so a person says 3pm then it should end at 3:45pm, also 
@@ -318,106 +440,168 @@ app.post("/appointmentRequest",async (req: Request, res: Response) =>
 {
   try{
     let pageId :string = "9e37c34b-9307-40d1-9f45-8f97b3ff70f5";
+    let webhookResponse: string = "";
     let isAppointmentBooked:boolean = false;
     // Need to add validations as well for the parameters I am receiving and for the appointment type as well.
     const parameters = req.body?.sessionInfo?.parameters || {};
     console.log("apppointment details", parameters);
-    let webhookResponse: string = "";
+   
     
    
     const {day,hours,minutes,month,year} = parameters?.appointment_time;
+  
     const appointment_type = parameters?.appointment_type;
    
     // ----------------------------------------------
     
     // Convert to JavaScript Date (month - 1 because JavaScript months are 0-based)
-    const appointmentDate = new Date(
-      year,
-      month -1 , 
-      day,
-      hours,
-      minutes,
-    );
-    const isTimeValid = isTimeSlotValid(minutes,hours,day,month-1,year);
+ 
+    const isTimeValid = isTimeSlotValid(minutes,hours,day,month,year);
     console.log("isTimeValid",isTimeValid);
-    // if(!isTimeValid.isValid)
-    // {
-    //   webhookResponse = isTimeValid.message;
-    // }
-    let appointmentISO = appointmentDate.toISOString();
+    if(!isTimeValid.isValid)
+    {
+      webhookResponse = isTimeValid.message;
+    }
+    else{
+      const desiredAppointmentSlot = new Date(
+        year,
+        month -1  , 
+        day,
+        hours,
+        minutes,
+      );
+      let appointmentISO = desiredAppointmentSlot.toISOString();
     
   
-    // -------------------------------------------------
-    const existingAppointment = await connection.db
-    ?.collection("appointment")
-    .findOne({ date_time:appointmentISO,type:appointment_type });
-
-  
-     if (existingAppointment) {
-      console.log("This time slot is already booked!");
-      webhookResponse = "This slot has already been booked.";
-      const responsePayload = {
-        fulfillment_response: {
-          messages: [{ text: { text: [webhookResponse] } }],
-        },
-        sessionInfo: {
-          parameters: {
-            isAppointmentBooked:false
-          }
-        }
-      };
-      res.json(responsePayload);
-      
-    } else {
-      console.log("Time slot is available!");
-  
-      let newAppointment = {
-        date_time:appointmentISO,
-        type:appointment_type
-      }
-  
-      const response = await connection.db
+      // -------------------------------------------------
+      const existingAppointment = await connection.db
       ?.collection("appointment")
-      .insertOne(newAppointment);
-    
-    if (response?.acknowledged) {
-      console.log("Appointment booked");
-      isAppointmentBooked = true;
-      // webhookResponse = "Your appointment has been booked"; // Need to mention the date and appointment type
-      const responsePayload = {
-    
-        fulfillment_response: {
-          messages: [{ text: { text: [webhookResponse] } }],
-        },
-        sessionInfo:{
-          parameters:{
-            appointmentDateTime:formatDate(appointmentISO),
-            type:appointment_type,
-            isAppointmentBooked:isAppointmentBooked
-          }
-        }
-      }; 
-      res.json(responsePayload);  
-      
-    } else {
-      console.error("Something went wrong",response);
-      webhookResponse = "Something went wrong!! Please try again";  
-      const responsePayload = {
-      
-        fulfillment_response: {
-          messages: [{ text: { text: [webhookResponse] } }],
-        },
-        sessionInfo: {
-          parameters: {
-            isAppointmentBooked:isAppointmentBooked
-          }
-        }
-      }; 
-      res.json(responsePayload);   
-    }
+      .findOne({
+        type: appointment_type, // Ensure the appointment type matches
+        startTime: { $lte: desiredAppointmentSlot }, // startTime should be before or equal to the desired time
+        endTime: { $gt: desiredAppointmentSlot },   // endTime should be after the desired time
+      });
   
-   
+    
+       if (existingAppointment) {
+        console.log("This time slot is already booked!");
+        webhookResponse = "This slot has already been booked.";
+        const nearestAppointmentSlot :any = getNearestAppointmentSlot(existingAppointment,appointment_type);
+        const responsePayload = {
+          fulfillment_response: {
+            messages: [{ text: { text: [webhookResponse] } }],
+          },
+          sessionInfo: {
+            parameters: {
+              isAppointmentBooked:false,
+              appointment_time:null
+            }
+          }
+        };
+        res.json(responsePayload);
+        
+      } else {
+        console.log("Time slot is available!");
+        let endTime:Date = new Date( year,
+          month -1  , 
+          day,
+          hours,
+          minutes+45)
+
+          const patientId = await getPatientId(parameters?.patient_id_or_email);
+          if(!patientId)
+          {
+            webhookResponse = "An unknown Error occured,Please try again !!";
+          }
+          else{
+            let newAppointment:object = {
+              startTime:desiredAppointmentSlot,
+              endTime:endTime,
+              type:appointment_type,
+              patientId:patientId
+            }
+
+            // ----Test chat gpt --
+          //   const existingAppointment = await connection.db
+          //   ?.collection("appointment")
+          //   .findOne({
+          //     type: appointment_type, // Ensure the appointment type matches
+          //     startTime: { $lte: desiredAppointmentSlot }, // startTime should be before or equal to the desired time
+          //     endTime: { $gt: desiredAppointmentSlot },   // endTime should be after the desired time
+          //   });
+          
+          // if (existingAppointment) {
+          //   console.log("Slot is already booked.");
+          // } else {
+          //   console.log("Slot is available.");
+          // }
+            // -----
+    
+           
+            // create a function to find patientId using email 'patient_id_or_email'
+            const response = await connection.db
+            ?.collection("appointment")
+            .insertOne(newAppointment);
+          
+          if (response?.acknowledged) {
+            console.log("Appointment booked");
+            isAppointmentBooked = true;
+             webhookResponse = "Your appointment has been booked"; // Need to mention the date and appointment type
+            const responsePayload = {
+          
+              fulfillment_response: {
+                messages: [{ text: { text: [webhookResponse] } }],
+              },
+              sessionInfo:{
+                parameters:{
+                  appointmentDateTime:formatDate(appointmentISO),
+                  type:appointment_type,
+                  isAppointmentBooked:isAppointmentBooked
+                }
+              }
+            }; 
+            res.json(responsePayload);  
+            
+          } else {
+            console.error("Something went wrong",response);
+            webhookResponse = "Something went wrong!! Please try again";  
+            const responsePayload = {
+            
+              fulfillment_response: {
+                messages: [{ text: { text: [webhookResponse] } }],
+              },
+              sessionInfo: {
+                parameters: {
+                  isAppointmentBooked:isAppointmentBooked
+                }
+              }
+            }; 
+            res.json(responsePayload);   
+          }
+
+          }
+    
+      }
+
     }
+
+    // ----
+    // const responsePayload = {
+          
+    //   fulfillment_response: {
+    //     messages: [{ text: { text: [webhookResponse] } }],
+    //   },
+    //   sessionInfo:{
+    //     parameters:{
+    //       // appointmentDateTime:formatDate(appointmentISO),
+    //       type:appointment_type,
+    //       isAppointmentBooked:isAppointmentBooked
+    //     }
+    //   }
+    // }; 
+    // res.json(responsePayload);  
+
+    // ----
   
   }
   catch(error)
