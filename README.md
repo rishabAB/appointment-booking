@@ -51,3 +51,9 @@ Run the following command to expose port 4000: ngrok http 4000
 **Error Handling & Validations**: Ensures that invalid times (e.g., Sundays, lunch breaks) are not allowed.
 
 **Fallback to Nearest Available Slots**: If the requested time is unavailable, it suggests the closest available slot.
+<<<<<<< HEAD
+=======
+
+
+
+>>>>>>> 9b2f2152088c082f841379831bcfaf62739d154f
