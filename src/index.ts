@@ -16,7 +16,7 @@ import {
 } from "./helpers";
 
 const app = express();
-const uri: string = process.env.ATLAS_URI || "";
+const uri: string = process.env.STEER_HEALTH_DB || "";
 
 app.use(express.json());
 app.use(cors());
