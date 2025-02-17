@@ -66,7 +66,7 @@ app.post("/getExistingPatient", async (req: Request, res: Response) => {
       const user = await findUser(match, collection);
 
       if (!user) {
-        webhookResponse = "This email address or patient id does not exist.";
+        webhookResponse = "This email address or patient id does not match with our records.";
         id_or_email = null;
       } else {
         isPatientIdentified = true;
@@ -115,11 +115,11 @@ app.post("/newPatientDetails", async (req: Request, res: Response) => {
 
     insurance_name = extractDetails(
       insurance_name,
-      EXTRACT_DETAILS_KEYS.insurance_name
+      EXTRACT_DETAILS_KEYS.insuranceName
     );
     insurance_type = extractDetails(
       insurance_type,
-      EXTRACT_DETAILS_KEYS.insurance_type
+      EXTRACT_DETAILS_KEYS.insuranceType
     );
 
     const newPatient = {
@@ -261,7 +261,7 @@ async function recursiveAppointmentSlot(
     }
 
     const existingAppointment = await connection.db
-      ?.collection("appointment")
+      ?.collection("appointments")
       .findOne({
         type: appointment_type, // Ensure the appointment type matches
         startTime: { $lte: cloneDate }, // startTime should be before or equal to the desired time
@@ -315,7 +315,7 @@ app.post("/sameDaySlot", async (req: Request, res: Response) => {
       webhookResponse = "It's our lunch time";
     } else {
       const appointmentExists = await connection.db
-        ?.collection("appointment")
+        ?.collection("appointments")
         .findOne({
           type: appointment_type,
           startTime: { $lte: desiredAppointmentSlot },
@@ -342,16 +342,16 @@ app.post("/sameDaySlot", async (req: Request, res: Response) => {
 
           // create a function to find patientId using email 'id_or_email'
           const response = await connection.db
-            ?.collection("appointment")
+            ?.collection("appointments")
             .insertOne(newAppointment);
 
           if (response?.acknowledged) {
             is_appointment_booked = true;
-            webhookResponse = `Your appointment for ${appointment_type} on ${formatHumanReadableDate(
+            webhookResponse = `Your appointment for ${appointment_type} is confirmed for ${formatHumanReadableDate(
               desiredAppointmentSlot
             )} at ${formatHumanReadableTime(
               desiredAppointmentSlot
-            )} is confirmed.Thankyou`;
+            )} .Thankyou`;
             const responsePayload = {
               fulfillment_response: {
                 messages: [{ text: { text: [webhookResponse] } }],
@@ -384,7 +384,7 @@ app.post("/sameDaySlot", async (req: Request, res: Response) => {
       }
     }
   } catch (error) {
-    console.error(response);
+    console.error(error);
 
     const responsePayload = {
       fulfillment_response: {
@@ -425,6 +425,7 @@ app.post("/appointmentRequest", async (req: Request, res: Response) => {
           parameters: {
             is_appointment_booked: is_appointment_booked,
             appointment_slot: null,
+            is_nearest_slot_available:is_nearest_slot_available
           },
         },
       };
@@ -441,7 +442,7 @@ app.post("/appointmentRequest", async (req: Request, res: Response) => {
 
       // -------------------------------------------------
       const existingAppointment = await connection.db
-        ?.collection("appointment")
+        ?.collection("appointments")
         .findOne({
           type: appointment_type, // Ensure the appointment type matches
           startTime: { $lte: desiredAppointmentSlot }, // startTime should be before or equal to the desired time
@@ -514,16 +515,16 @@ app.post("/appointmentRequest", async (req: Request, res: Response) => {
           };
 
           const response = await connection.db
-            ?.collection("appointment")
+            ?.collection("appointments")
             .insertOne(newAppointment);
 
           if (response?.acknowledged) {
             is_appointment_booked = true;
-            webhookResponse = `Your appointment for ${appointment_type} on ${formatHumanReadableDate(
+            webhookResponse = `Your appointment for ${appointment_type} is confirmed for ${formatHumanReadableDate(
               desiredAppointmentSlot
             )} at ${formatHumanReadableTime(
               desiredAppointmentSlot
-            )} is confirmed. Thankyou`;
+            )}. Thankyou`;
             const responsePayload = {
               fulfillment_response: {
                 messages: [{ text: { text: [webhookResponse] } }],
@@ -578,19 +579,27 @@ app.post("/extractPatientDetails", async (req: Request, res: Response) => {
     const parameters = req.body?.sessionInfo?.parameters;
     let webhookResponse: string = "";
     let is_already_registered: boolean = false;
+    let invalid_email_address :boolean = false;
 
     let { email, firstname, lastname } = parameters;
 
     firstname = extractDetails(firstname, EXTRACT_DETAILS_KEYS.firstName);
     lastname = extractDetails(lastname, EXTRACT_DETAILS_KEYS.lastName);
     email = extractDetails(email, EXTRACT_DETAILS_KEYS.email);
-
-    const emailExixts = await connection.db
+    if(!email)
+    {
+      webhookResponse = "Incorrect email address";
+      invalid_email_address = true;
+    }
+    else{
+      var emailExixts = await connection.db
       ?.collection("patients")
       .findOne({ email });
     if (emailExixts) {
       webhookResponse = `hii  ${emailExixts?.name},It looks like you have already registered`;
       is_already_registered = true;
+    }
+
     }
 
     // Construct response
@@ -602,7 +611,8 @@ app.post("/extractPatientDetails", async (req: Request, res: Response) => {
         parameters: {
           firstname: firstname,
           lastname: lastname,
-          email: email,
+          email: email ? email : null,
+          invalid_email_address:invalid_email_address,
           is_already_registered: is_already_registered,
           insurance_type: emailExixts?.insurancePlanType
             ? emailExixts.insurancePlanType
@@ -610,6 +620,7 @@ app.post("/extractPatientDetails", async (req: Request, res: Response) => {
           insurance_name: emailExixts?.insuranceCompany
             ? emailExixts.insuranceCompany
             : null,
+           
         },
       },
     };
