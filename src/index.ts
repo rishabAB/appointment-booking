@@ -577,7 +577,7 @@ app.post("/extractPatientDetails", async (req: Request, res: Response) => {
     // Extract session parameters
     const parameters = req.body?.sessionInfo?.parameters;
     let webhookResponse: string = "";
-    let isAlreadyRegistered: boolean = false;
+    let is_already_registered: boolean = false;
 
     let { email, firstname, lastname } = parameters;
 
@@ -590,7 +590,7 @@ app.post("/extractPatientDetails", async (req: Request, res: Response) => {
       .findOne({ email });
     if (emailExixts) {
       webhookResponse = `hii  ${emailExixts?.name},It looks like you have already registered`;
-      isAlreadyRegistered = true;
+      is_already_registered = true;
     }
 
     // Construct response
@@ -603,7 +603,7 @@ app.post("/extractPatientDetails", async (req: Request, res: Response) => {
           firstname: firstname,
           lastname: lastname,
           email: email,
-          isAlreadyRegistered: isAlreadyRegistered,
+          is_already_registered: is_already_registered,
           insurance_type: emailExixts?.insurancePlanType
             ? emailExixts.insurancePlanType
             : null,
