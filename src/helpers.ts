@@ -2,7 +2,7 @@ import { ObjectId, Collection } from "mongodb";
 import { EXTRACT_DETAILS_KEYS } from "./constants";
 
 const emailRegex = /^[\w.-]+@[a-zA-Z\d.-]+\.[a-zA-Z]{2,}$/;
-export const patientIdRegex = /^[a-fA-F0-9]{24}$/;
+
 const firstNameRegex =
   /\b(?:firstname is|it's|name is|my name is|okay firstname is | my firstname is )\s+(\w+)/i;
 const lastNameRegex =
@@ -30,19 +30,6 @@ export const validateDOB = (dob: any): boolean => {
   return dobDate <= newYorkTime; // DOB should not be greater than today
 };
 
-/**@param idOrEmail */
-/**Here we are getting a valid identifier by validating that it's patientId or email */
-export const getValidIdentifier = (
-  idOrEmail: string
-): Promise<string | null> => {
-  return new Promise((resolve, _reject) => {
-    const arrayOfString: string[] = idOrEmail.split(" ");
-    const match = arrayOfString.find(
-      (elem: string) => emailRegex.test(elem) || patientIdRegex.test(elem)
-    );
-    resolve(match || null);
-  });
-};
 
 /**@param identifier, @param collection */
 /** We are using findone in order to find user in our db */
@@ -52,11 +39,7 @@ export const findUser = async (
 ): Promise<any | null> => {
   let query;
 
-  if (ObjectId.isValid(identifier)) {
-    query = { $or: [{ _id: new ObjectId(identifier) }, { email: identifier }] };
-  } else {
-    query = { email: identifier };
-  }
+  query = {  id: identifier  };
 
   return await collection.findOne(query);
 };
@@ -87,7 +70,7 @@ export const extractDetails = (inputString: String, keyWord: String) => {
       return firstName ? firstName[1] : inputString; // Return the first name or null if not found
 
     case EXTRACT_DETAILS_KEYS.lastName:
-      const lastName = inputString.match(firstNameRegex);
+      const lastName = inputString.match(lastNameRegex);
       return lastName ? lastName[1] : inputString; // Return the first name or null if not found
 
     case EXTRACT_DETAILS_KEYS.email:

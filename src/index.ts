@@ -1,14 +1,12 @@
-import express, { Request, response, Response } from "express";
+import express, { Request, Response } from "express";
 import cors from "cors";
 import mongoose from "mongoose";
 import { ErrorRequestHandler } from "express";
 import { ERROR_MESSAGES, EXTRACT_DETAILS_KEYS } from "./constants";
 import {
   validateDOB,
-  getValidIdentifier,
   findUser,
   formatDate,
-  patientIdRegex,
   isTimeSlotValid,
   extractDetails,
   formatHumanReadableTime,
@@ -49,29 +47,23 @@ app.post("/validateDob", async (req: Request, res: Response) => {
 /**We are fetching existing patient details if patient says he/she has been before */
 app.post("/getExistingPatient", async (req: Request, res: Response) => {
   try {
-    let { id_or_email } = req?.body?.sessionInfo?.parameters;
+    let { patient_id } = req?.body?.sessionInfo?.parameters;
     let webhookResponse: string = "";
     let isPatientIdentified: boolean = false;
 
-    const match = await getValidIdentifier(id_or_email);
-    if (!match) {
-      webhookResponse = "This email address or patient id in invalid.";
-      id_or_email = null;
+    if (!connection?.db) {
+      throw new Error("Database connection is not established.");
+    }
+
+    const collection = connection.db.collection("patients");
+    const user = await findUser(patient_id, collection);
+
+    if (!user) {
+      webhookResponse = "This patient id does not match with our records.";
+      patient_id = null;
     } else {
-      if (!connection?.db) {
-        throw new Error("Database connection is not established.");
-      }
-
-      const collection = connection.db.collection("patients");
-      const user = await findUser(match, collection);
-
-      if (!user) {
-        webhookResponse = "This email address or patient id does not match with our records.";
-        id_or_email = null;
-      } else {
-        isPatientIdentified = true;
-        webhookResponse = `Hii ${user?.firstName}`;
-      }
+      isPatientIdentified = true;
+      webhookResponse = `Hii ${user?.firstName}`;
     }
     const responsePayload = {
       fulfillment_response: {
@@ -80,7 +72,7 @@ app.post("/getExistingPatient", async (req: Request, res: Response) => {
       sessionInfo: {
         parameters: {
           isPatientIdentified: isPatientIdentified,
-          id_or_email: id_or_email,
+          patient_id: patient_id,
         },
       },
     };
@@ -101,14 +93,41 @@ app.post("/getExistingPatient", async (req: Request, res: Response) => {
   }
 });
 
+/** We are getting auto incremented id from patients collection */
+async function autoIncrementedId() {
+  return new Promise(async (resolve, reject) => {
+    try {
+      var lastPatient = await connection.db
+        ?.collection("patients")
+        .find()
+        .sort({ id: -1 })
+        .limit(1)
+        .toArray();
+      let id;
+
+      if (lastPatient?.length) {
+        // If there is a result, increment the last id
+        id = lastPatient[0].id + 1;
+      } else {
+        // If no result, start from id 1
+        id = 1;
+      }
+      resolve(id);
+    } catch (error) {
+      console.error(error);
+      reject(error);
+    }
+  });
+}
+
 /**We are inserting new patient details in our database */
-app.post("/newPatientDetails", async (req: Request, res: Response) => {
+app.post("/createPatient", async (req: Request, res: Response) => {
   try {
     const parameters = req.body?.sessionInfo?.parameters || {};
     let webhookResponse: string = "";
     let isPatientCreated: boolean = false;
 
-    let { firstname, lastname, email, dob, insurance_name, insurance_type } =
+    let { firstname, lastname, dob, insurance_name, insurance_type } =
       parameters;
 
     const { year, month, day } = dob;
@@ -121,14 +140,15 @@ app.post("/newPatientDetails", async (req: Request, res: Response) => {
       insurance_type,
       EXTRACT_DETAILS_KEYS.insuranceType
     );
+    const patientId = await autoIncrementedId();
 
     const newPatient = {
       firstName: firstname,
       lastName: lastname,
-      email: email,
       dateOfBirth: `${day}/${month}/${year}`,
       insuranceCompany: insurance_name,
       insurancePlanType: insurance_type,
+      id: patientId,
     };
 
     const response = await connection.db
@@ -136,9 +156,8 @@ app.post("/newPatientDetails", async (req: Request, res: Response) => {
       .insertOne(newPatient);
 
     if (response?.acknowledged) {
-      const patientId = response?.insertedId.toString();
       /**Providing the patient id for future references */
-      webhookResponse = `Your unique Patient ID is ${patientId}. Please save it for future use or your email address would also work`;
+      webhookResponse = `Your unique Patient ID is ${patientId}. Please save it for future use.`;
 
       isPatientCreated = true;
       const responsePayload = {
@@ -150,7 +169,7 @@ app.post("/newPatientDetails", async (req: Request, res: Response) => {
             insurance_name: insurance_name,
             insurance_type: insurance_type,
             isPatientCreated: isPatientCreated,
-            id_or_email: patientId,
+            patient_id: patientId,
           },
         },
       };
@@ -183,22 +202,6 @@ app.post("/newPatientDetails", async (req: Request, res: Response) => {
     res.json(responsePayload);
   }
 });
-
-/**@param id_or_email */
-/**We are getting patientId frome email or if user has already provided */
-function getPatientId(id_or_email: string): Promise<string | undefined> {
-  return new Promise(async (resolve, reject) => {
-    const elem = patientIdRegex.test(id_or_email);
-    if (elem) {
-      resolve(id_or_email);
-    } else {
-      const response = await connection.db
-        ?.collection("patients")
-        .findOne({ email: id_or_email });
-      resolve(response?._id?.toString());
-    }
-  });
-}
 
 /**@param existingAppointment, @param appointment_type*/
 /**We are trying to get before appointment slot and after if the desired slot is already booked */
@@ -298,13 +301,14 @@ async function recursiveAppointmentSlot(
   }
 }
 
-/**This route is being used if a same slot slot/nearby slot timings are available */
+/**This route is being used if a same slot slot/nearby slot timings are available for appointment */
 app.post("/sameDaySlot", async (req: Request, res: Response) => {
   try {
     let is_appointment_booked: boolean = false;
     let webhookResponse: String = "";
     const parameters = req.body?.sessionInfo?.parameters || {};
-    const { appointment_slot, preffered_time, appointment_type } = parameters;
+    const { appointment_slot, preffered_time, appointment_type, patient_id } =
+      parameters;
 
     const desiredAppointmentSlot = new Date(appointment_slot);
     const { hours, minutes } = preffered_time;
@@ -329,18 +333,16 @@ app.post("/sameDaySlot", async (req: Request, res: Response) => {
         let endTime: Date = new Date(desiredAppointmentSlot);
         endTime.setMinutes(endTime.getMinutes() + 45);
 
-        const patientId = await getPatientId(parameters?.id_or_email);
-        if (!patientId) {
+        if (!patient_id) {
           webhookResponse = ERROR_MESSAGES.defaultMessage;
         } else {
           let newAppointment: object = {
             startTime: desiredAppointmentSlot,
             endTime: endTime,
             type: appointment_type,
-            patientId: patientId,
+            patientId: patient_id,
           };
 
-          // create a function to find patientId using email 'id_or_email'
           const response = await connection.db
             ?.collection("appointments")
             .insertOne(newAppointment);
@@ -349,9 +351,7 @@ app.post("/sameDaySlot", async (req: Request, res: Response) => {
             is_appointment_booked = true;
             webhookResponse = `Your appointment for ${appointment_type} is confirmed for ${formatHumanReadableDate(
               desiredAppointmentSlot
-            )} at ${formatHumanReadableTime(
-              desiredAppointmentSlot
-            )} .Thankyou`;
+            )} at ${formatHumanReadableTime(desiredAppointmentSlot)} .Thankyou`;
             const responsePayload = {
               fulfillment_response: {
                 messages: [{ text: { text: [webhookResponse] } }],
@@ -412,6 +412,7 @@ app.post("/appointmentRequest", async (req: Request, res: Response) => {
     const { day, hours, minutes, month, year } = parameters?.appointment_slot;
 
     const appointment_type = parameters?.appointment_type;
+    const patient_id = parameters?.patient_id;
 
     const isTimeValid = isTimeSlotValid(minutes, hours, day, month, year);
 
@@ -425,7 +426,7 @@ app.post("/appointmentRequest", async (req: Request, res: Response) => {
           parameters: {
             is_appointment_booked: is_appointment_booked,
             appointment_slot: null,
-            is_nearest_slot_available:is_nearest_slot_available
+            is_nearest_slot_available: is_nearest_slot_available,
           },
         },
       };
@@ -466,7 +467,7 @@ app.post("/appointmentRequest", async (req: Request, res: Response) => {
           ) {
             webhookResponse = `Unfortunately, your preferred slot is already booked! Nearby slots available on ${formatHumanReadableDate(
               desiredAppointmentSlot
-            )} are at${formatHumanReadableTime(
+            )} are at ${formatHumanReadableTime(
               nearestAppointmentSlot.beforeDesiredDate
             )} and  at ${formatHumanReadableTime(
               nearestAppointmentSlot.afterDesiredDate
@@ -503,15 +504,14 @@ app.post("/appointmentRequest", async (req: Request, res: Response) => {
       } else {
         let endTime: Date = new Date(year, month - 1, day, hours, minutes + 45);
 
-        const patientId = await getPatientId(parameters?.id_or_email);
-        if (!patientId) {
+        if (!patient_id) {
           webhookResponse = ERROR_MESSAGES.defaultMessage;
         } else {
           let newAppointment: object = {
             startTime: desiredAppointmentSlot,
             endTime: endTime,
             type: appointment_type,
-            patientId: patientId,
+            patientId: patient_id,
           };
 
           const response = await connection.db
@@ -522,9 +522,7 @@ app.post("/appointmentRequest", async (req: Request, res: Response) => {
             is_appointment_booked = true;
             webhookResponse = `Your appointment for ${appointment_type} is confirmed for ${formatHumanReadableDate(
               desiredAppointmentSlot
-            )} at ${formatHumanReadableTime(
-              desiredAppointmentSlot
-            )}. Thankyou`;
+            )} at ${formatHumanReadableTime(desiredAppointmentSlot)}. Thankyou`;
             const responsePayload = {
               fulfillment_response: {
                 messages: [{ text: { text: [webhookResponse] } }],
@@ -579,27 +577,21 @@ app.post("/extractPatientDetails", async (req: Request, res: Response) => {
     const parameters = req.body?.sessionInfo?.parameters;
     let webhookResponse: string = "";
     let is_already_registered: boolean = false;
-    let invalid_email_address :boolean = false;
 
-    let { email, firstname, lastname } = parameters;
 
-    firstname = extractDetails(firstname, EXTRACT_DETAILS_KEYS.firstName);
-    lastname = extractDetails(lastname, EXTRACT_DETAILS_KEYS.lastName);
-    email = extractDetails(email, EXTRACT_DETAILS_KEYS.email);
-    if(!email)
-    {
-      webhookResponse = "Incorrect email address";
-      invalid_email_address = true;
-    }
-    else{
-      var emailExixts = await connection.db
+    let { firstname, lastname, dob } = parameters;
+
+    firstname = extractDetails(typeof firstname == "object" ? firstname?.name : firstname , EXTRACT_DETAILS_KEYS.firstName);
+    lastname = extractDetails(typeof lastname == "object" ? lastname?.name : lastname, EXTRACT_DETAILS_KEYS.lastName);
+
+    /**Here this is an assumption being that if a patient has same firstname,lastname and dob.
+     * It's the same although it can be untrue */
+    var patientExists = await connection.db
       ?.collection("patients")
-      .findOne({ email });
-    if (emailExixts) {
-      webhookResponse = `hii  ${emailExixts?.name},It looks like you have already registered`;
+      .findOne({ firstName: firstname, lastName: lastname, dob });
+    if (patientExists) {
+      webhookResponse = `hii  ${firstname},It looks like you have already registered`;
       is_already_registered = true;
-    }
-
     }
 
     // Construct response
@@ -611,16 +603,13 @@ app.post("/extractPatientDetails", async (req: Request, res: Response) => {
         parameters: {
           firstname: firstname,
           lastname: lastname,
-          email: email ? email : null,
-          invalid_email_address:invalid_email_address,
           is_already_registered: is_already_registered,
-          insurance_type: emailExixts?.insurancePlanType
-            ? emailExixts.insurancePlanType
+          insurance_type: patientExists?.insurancePlanType
+            ? patientExists.insurancePlanType
             : null,
-          insurance_name: emailExixts?.insuranceCompany
-            ? emailExixts.insuranceCompany
+          insurance_name: patientExists?.insuranceCompany
+            ? patientExists.insuranceCompany
             : null,
-           
         },
       },
     };
@@ -649,8 +638,6 @@ function connectToDatabase() {
     .then(() => {
       connection = mongoose.connection;
       console.log("Mongodb connection successful", connection);
-
-      //  insertDataInPatientCollection();
     })
     .catch((error: ErrorRequestHandler) => {
       console.error("Mongodb connection failed", error);
