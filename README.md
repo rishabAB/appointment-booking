@@ -14,7 +14,7 @@ Google Cloud Platform (GCP) Account for Dialogflow integration.
 
 A Mobile Plan that allows calling US numbers.
 
-## Phone Number - +1 361 880-2377
+## Test This Flow - +1 361 880-2377 or you can import this agent and connect it with a phone gateway :- https://cloud.google.com/dialogflow/es/docs/integrations/phone-gateway
 
 ## Setup Instructions
 
