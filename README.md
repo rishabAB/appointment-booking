@@ -8,8 +8,6 @@ Node.js installed on your system.
 
 Ngrok for exposing local servers to the internet.
 
-Twilio Account for handling IVR and phone call interactions.
-
 Google Cloud Platform (GCP) Account for Dialogflow integration.
 
 A Mobile Plan that allows calling US numbers.
@@ -46,8 +44,6 @@ Run the following command to expose port 4000: ngrok http 4000
 ## Features
 
 **Dialogflow IVR Integration**: The system interacts with users through an IVR system powered by Dialogflow.
-
-**Twilio Support**: Users can call in to book appointments via Twilio IVR.
 
 **Dynamic Slot Allocation**: The system checks appointment availability in real time and schedules appointments accordingly.
 
