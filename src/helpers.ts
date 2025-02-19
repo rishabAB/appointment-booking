@@ -1,17 +1,12 @@
 import { ObjectId, Collection } from "mongodb";
 import { EXTRACT_DETAILS_KEYS } from "./constants";
 
-const emailRegex = /^[\w.-]+@[a-zA-Z\d.-]+\.[a-zA-Z]{2,}$/;
 
 const firstNameRegex =
   /\b(?:firstname is|it's|name is|my name is|okay firstname is | my firstname is )\s+(\w+)/i;
 const lastNameRegex =
   /\b(?:lastname is|it's|surname is|my last name is|okay last name is)\s+(\w+)/i;
-const insuranceNameRegex =
-  /\b(?:health insurance provider is|it's|provider is|insurance is | my health insurance provider is | my insurance provider is | my health provider is )\s+([\w\s-]+)/i;
 
-const insuranceTypeRegex =
-  /\b(?:health insurance type is|it's|insurance type is|type is|my health insurance type is |okay,type is | okay it is)\s+([\w\s-]+)/i;
 
 /**@param dob  */
 /**Here we are validating that the dob user has provided is valid or not */
@@ -73,18 +68,6 @@ export const extractDetails = (inputString: String, keyWord: String) => {
       const lastName = inputString.match(lastNameRegex);
       return lastName ? lastName[1] : inputString; // Return the first name or null if not found
 
-    case EXTRACT_DETAILS_KEYS.email:
-      const arrayOfString: string[] = inputString.split(" ");
-      const email = arrayOfString.find((elem: string) => emailRegex.test(elem));
-      return email ? email : null;
-
-    case EXTRACT_DETAILS_KEYS.insuranceName:
-      const insuranceName = inputString.match(insuranceNameRegex);
-      return insuranceName ? insuranceName[1] : inputString;
-
-    case EXTRACT_DETAILS_KEYS.insuranceType:
-      const insuranceType = inputString.match(insuranceTypeRegex);
-      return insuranceType ? insuranceType[1] : inputString;
   }
 };
 

@@ -132,14 +132,6 @@ app.post("/createPatient", async (req: Request, res: Response) => {
 
     const { year, month, day } = dob;
 
-    insurance_name = extractDetails(
-      insurance_name,
-      EXTRACT_DETAILS_KEYS.insuranceName
-    );
-    insurance_type = extractDetails(
-      insurance_type,
-      EXTRACT_DETAILS_KEYS.insuranceType
-    );
     const patientId = await autoIncrementedId();
 
     const newPatient = {
