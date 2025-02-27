@@ -8,17 +8,18 @@ Node.js installed on your system.
 
 Ngrok for exposing local servers to the internet.
 
-Twilio Account for handling IVR and phone call interactions.
-
 Google Cloud Platform (GCP) Account for Dialogflow integration.
 
 A Mobile Plan that allows calling US numbers.
+
+## Phone Integration 
+You can connect it with a phone gateway :- https://cloud.google.com/dialogflow/es/docs/integrations/phone-gateway
 
 ## Setup Instructions
 
 1. Import the Flow:
 
-Import the provided Dialogflow flow into your Google Cloud Dialogflow project.
+Import the provided Dialogflow agent (file name - exported_agent_voice-agent-ivr.blob) into your Google Cloud Dialogflow project.
 
 2.Start Ngrok:
 
@@ -43,8 +44,6 @@ Run the following command to expose port 4000: ngrok http 4000
 ## Features
 
 **Dialogflow IVR Integration**: The system interacts with users through an IVR system powered by Dialogflow.
-
-**Twilio Support**: Users can call in to book appointments via Twilio IVR.
 
 **Dynamic Slot Allocation**: The system checks appointment availability in real time and schedules appointments accordingly.
 
