@@ -19,7 +19,7 @@ You can connect it with a phone gateway :- https://cloud.google.com/dialogflow/e
 
 1. Import the Flow:
 
-Import the provided Dialogflow flow into your Google Cloud Dialogflow project.
+Import the provided Dialogflow flow (file name exported_agent_voice-agent-ivr) into your Google Cloud Dialogflow project.
 
 2.Start Ngrok:
 
