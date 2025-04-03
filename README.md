@@ -1,4 +1,4 @@
-# Appointment System IVR
+# Appointment Booking System IVR
 
 ## Prerequisites
 
